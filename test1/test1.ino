@@ -1,17 +1,22 @@
 #define WEBSOCKETS_LOGLEVEL     2
-// #include <WiFiClientSecure.h>
+#include <WiFiClientSecure.h>
 #include <WebSocketsServer_Generic.h>
 #include <ArduinoJson.h>
 #include "servo_loco.h"
 #include <ESP32Servo.h>
 #define WS_PORT 80
 
-#define RXd1 18
-#define TXd1 19
+#define RXd1 28
+#define TXd1 29
+#define LED 2
+#define panPin 12
+#define tiltPin 14
 
 int sosCount = 0;
 String lastCommand = "";
 String currCommand = "";
+
+bool rpiOn = true;
 
 DynamicJsonDocument docRpi(1024);
 
@@ -30,7 +35,6 @@ int tilt = 0;
 String temp = "";         // commands
 
 
-int LED1 = LED_BUILTIN;
 int buzzer = 10;
 int smokeA0 = A5;
 int sensorThreshold = 120;
@@ -111,34 +115,34 @@ void webSocketEvent(const uint8_t& num, const WStype_t& type, uint8_t * payload,
         switch (sensor[0])
         {
           case 'B':
-            Serial.println("Hi from back!");
             Serial.println("Back");
             currCommand = "B";
-            //            standUp();
             break;
           case 'F':
-            Serial.println("Hi from Front!");
             Serial.println("Front");
-            //            forward();
             currCommand = "F";
             break;
           case 'R':
-            Serial.println("Hi from right!");
             Serial.println("Right");
-            //            right();
             currCommand = "R";
             break;
           case 'L':
-            Serial.println("Hi from Left!");
             Serial.println("Left");
-            //            left();
+            currCommand = "L";
+            break;
+          case 'C':
+            Serial.println("C");
+            rpiOn = true;
+            currCommand = "L";
+            break;
+          case 'D':
+            Serial.println("D");
+            rpiOn = false;
             currCommand = "L";
             break;
           default:
-            Serial.println("Hi from def!");
             Serial.println("Def");
             currCommand = "S";
-            //            standUp();
             break;
         }
 
@@ -164,7 +168,7 @@ void setup()
   digitalWrite(12 , LOW);
   digitalWrite(13 , LOW);
   digitalWrite(2 , LOW);
-  pinMode(LED1, OUTPUT);
+  pinMode(LED, OUTPUT);
   pinMode(smokeA0, INPUT);
   Serial.begin(38400);
   Serial1.begin(38400, SERIAL_8N1, RXd1, TXd1);
@@ -180,8 +184,12 @@ void setup()
   Serial.print(F("WebSocket IP address: "));
   Serial.println(WiFi.localIP());
   locoSetup();
-  servoPan.attach(12);
-  servoTilt.attach(14);
+
+
+  servoPan.attach(panPin);
+  servoTilt.attach(tiltPin);
+
+
   servoPan.write(xPos);
   servoTilt.write(yPos);
   //  Serial2.begin(115200, SERIAL_8N1, RXp2, TXp2);
@@ -202,76 +210,10 @@ void loop()
     webSocket.begin();
     webSocket.onEvent(webSocketEvent);
   }
- 
+
 
   digitalWrite(2 , HIGH);
   digitalWrite(12 , HIGH);
-  //  Serial.println(sosCount);
-
-  Serial.println("just inside rpi");
-  int temp98 = Serial1.available();
-  if (temp98 > 0)
-  {
-    Serial.println("inside rpi");
-    temp = Serial1.readStringUntil('*');
-    Serial.println(temp);
-    DeserializationError err = deserializeJson(docRpi,  temp);
-    if (err) {
-      Serial.println("deserializeJson() failed: ");
-    }
-
-    else {
-      loco = docRpi["loco"];
-      sos = docRpi["sos_status"];
-      pan = docRpi["pan"];
-      tilt = docRpi["tilt"];
-      if (sos == 1) {
-        String s = "{\"received\": \"true\",\"time\":\"curr\",\"reason\": \"fall detected\"}" ;
-        webSocket.sendTXT(1, s);
-        Serial.println("SOS sent!");
-      }
-
-      switch (loco) {
-        case 0: currCommand = "S";
-          break;
-        case 1: currCommand = "F";
-          break;
-        case 2: currCommand = "B";
-          break;
-        case 3: currCommand = "L";
-          break;
-        case 4: currCommand = "R";
-          break;
-
-      }
-      Serial.println(pan);
-      Serial.println(tilt);
-
-
-      if (pan > width / 2 + 100)
-        xPos -= angle;
-      if (pan < width / 2 - 100)
-        xPos += angle;
-      if (tilt < height / 2 + 100)
-        yPos -= angle;
-      if (tilt > height / 2 - 100)
-        yPos += angle;
-
-
-
-      //    if (yPos >= 180)
-      //      yPos = 180;
-      //    else if (yPos <= 0)
-      //      yPos = 0;
-
-      servoPan.write(xPos);
-      servoTilt.write(yPos);
-
-      temp = "";
-      Serial.println("");
-      delay(15);
-    }
-  }
   webSocket.loop();
   switch (currCommand[0]) {
     case 'B':
@@ -300,18 +242,88 @@ void loop()
       standUp();
       break;
   }
-  if (sosCount == 200) {
-    // specify conditions for SOS
-    String s = "{\"received\": \"true\",\"time\":\"curr\",\"reason\": \"reason\"}" ;
-    //    webSocket.sendTXT(1, s);
-    Serial.println("SOS sent!");
-    sosCount = 0;
-    delay(2000);
-  }
-  sosCount++;
-  
 
-  mpu = "";
-  command = "";
-  loc_com = "";
+  if ((rpiOn == true ) && (Serial1.available() > 0))
+  {
+    Serial.println("inside rpi");
+    temp = Serial1.readStringUntil('*');
+    Serial.println(temp);
+    DeserializationError err = deserializeJson(docRpi,  temp);
+    if (err)
+    {
+      Serial.println("deserializeJson() failed: ");
+    }
+    else
+    {
+      loco = docRpi["loco"];
+      sos = docRpi["sos_status"];
+      pan = docRpi["pan"];
+      tilt = docRpi["tilt"];
+      if (sos == 1)
+      {
+        String s = "{\"received\": \"true\",\"time\":\"curr\",\"reason\": \"fall detected\"}" ;
+        webSocket.sendTXT(1, s);
+        Serial.println("SOS sent!");
+      }
+      switch (loco) {
+        case 0: currCommand = "S";
+          break;
+        case 1: currCommand = "F";
+          break;
+        case 2: currCommand = "B";
+          break;
+        case 3: currCommand = "L";
+          break;
+        case 4: currCommand = "R";
+          break;
+      }
+      Serial.println(pan);
+      Serial.println(tilt);
+      if (pan > width / 2 + 100)
+        xPos -= angle;
+      if (pan < width / 2 - 100)
+        xPos += angle;
+      if (tilt < height / 2 + 100)
+        yPos -= angle;
+      if (tilt > height / 2 - 100)
+        yPos += angle;
+
+      servoPan.write(xPos);
+      servoTilt.write(yPos);
+
+      temp = "";
+    }
+  }
+
+//  if (sosCount == 200) {
+//    // specify conditions for SOS
+//    String s = "{\"received\": \"true\",\"time\":\"curr\",\"reason\": \"reason\"}" ;
+//    //    webSocket.sendTXT(1, s);
+//    Serial.println("SOS sent!");
+//    sosCount = 0;
+//    delay(2000);
+//  }
+//  sosCount++;
+
+
+  int analogSensor = analogRead(smokeA0);
+
+  Serial.print("Pin A0: ");
+  Serial.println(analogSensor);
+  // Checks if it has reached the threshold value
+  if (analogSensor > sensorThreshold)
+  {
+    digitalWrite(LED, HIGH);
+    delay(500);
+    digitalWrite(LED, LOW);
+    Serial.println("Thresh crossed");
+    // specify conditions for SOS
+    String s = "{\"received\": \"true\",\"time\":\"curr\",\"reason\": \"excess smoke detected\"}" ;
+    webSocket.sendTXT(1, s);
+    Serial.println("SOS sent!");
+  }
+  else
+  {
+    Serial.println("Thresh not crossed");
+  }
 }
