@@ -16,6 +16,8 @@ int sos = 0;
 int pan = 0;
 int tilt = 0;
 String temp = "";         // commands
+#define RXd1 18
+#define TXd1 19
 
 void setup() {
   p.attach(12);
@@ -24,6 +26,7 @@ void setup() {
   t.write(yPos);
 
   Serial.begin(38400);
+  Serial1.begin(38400, SERIAL_8N1, RXd1, TXd1);
 
 }
 
@@ -32,9 +35,9 @@ void loop() {
 
 
 
-  if (Serial.available() > 0)
+  if (Serial1.available() > 0)
   {
-    temp = Serial.readStringUntil('*');
+    temp = Serial1.readStringUntil('*');
     Serial.println(temp);
     DeserializationError err = deserializeJson(doc,  temp);
     if (err) {
